@@ -1,0 +1,219 @@
+---
+title: "ATE"
+author: "Project"
+date: "11/8/2021"
+output: html_document
+---
+## Problem 3
+Part a. Data preparation (5 points):
+Construct a new dataset for this problem using individual dataset from the last problem set.
+1. Create a new column num voted to represent the number of times the individual has voted in previous
+5 elections by summing the variables g2000, g200,2 g2004, p2000, and p2002 (exclude g2004 because
+the experiment filtered out people who didn’t vote in g2004), the resulting column should be an integer
+ranging from [0,5
+
+```{r}
+Data<-read.delim("clipboard")
+head(Data)
+```
+
+```{r}
+Data$num_voted<-Data$g2000+Data$g2002+Data$p2000+Data$p2002+Data$p2004
+head(Data)
+NewData<-Data[,c(1,2,3,15,14)]
+head(NewData)
+NewData %>% group_by(hh_id)%>%filter(!any(treatment =="Control")) 
+
+NewData = NewData[!NewData$treatment == "Hawthorne",]
+head(NewData)
+x<-subset(NewData,treatment == "Hawthorne",hh_id)
+NewData<-NewData[!(NewData$treatment=="Hawthorne"|NewData$treatment=="Civic Duty"),]
+head(NewData)
+
+```
+
+2. In the following problems, we are using the individual data with num voted as di↵erent subgroups.
+To simplify the problem, we investigate only the ”Neighbor” treatment e↵ect. Construct a cleaner
+dataset with {id, hh id, hh size, num voted, voted, treatment} as columns and filter out treatment
+groups besides {Neighbor, Control}.
+
+```{r}
+library(dplyr)
+N<-NewData %>% mutate(treatment = "Hawthorne")%>% select(treatment,hh_id)
+head(N)
+NewData %>% count(treatment)
+N<-NewData %>% mutate(treatment = "Hawthorne","Neighbors")%>% select(treatment,hh_id,num_voted,voted,hh_size)
+   
+````                     
+
+Construct a household-level dataset by taking the means of hh size, num voted, and voted in each
+household (the other variables are all equal within the same household and can simply be left as they
+are). Round the mean of num voted up to the nearest integer. Your resulting dataset should have
+one household per row, and hh id, hh size, num voted, voted, and treatment as columns. The variable
+num voted should have only values 0, 1, 2, 3, 4, 5.
+
+```{r}
+M<-NewData %>% mutate(treatment = "Hawthorne")%>% select(treatment,hh_id)
+
+
+Q<-NewData %>% mutate(treatment = "Hawthorne")%>% select(treatment,num_voted)
+J<-NewData %>% mutate(treatment = "Hawthorne")%>% select(treatment,voted)
+W<-NewData %>% mutate(treatment = "Hawthorne")%>% select(treatment,hh_size)
+
+dataZ<-data.frame(M,Q$num_voted,J$voted,W$hh_size)
+head(dataZ)
+
+c<-data.frame(mean(NewData$hh_id),mean(NewData$hh_size),mean(NewData$num_voted),mean(NewData$voted))
+head(c)
+
+dataZ %>% count(treatment)
+N %>% count(treatment)
+````
+
+4. Report number of households in each subgroup for both treatment and control, what do you observe?
+
+```{r}
+Data %>% count(hh_id)
+```
+Its observed that the highest number of households for each subgroup was three while the lowest was one.
+
+## Part B
+1. Estimate the CATE and report the variance of your estimates.
+
+```{r}
+library(sva)
+library(cate)
+library(grf)
+# Train a causal forest.
+n <- 50
+p <- 10
+X <- matrix(rnorm(n * p), n, p)
+W <- rbinom(n, 1, 0.5)
+Y <- pmax(X[, 1], 0) * W + X[, 2] + pmin(X[, 3], 0) + rnorm(n)
+c.forest <- causal_forest(X, Y, W)
+
+# Predict using the forest.
+X.test <- matrix(0, 101, p)
+X.test[, 1] <- seq(-2, 2, length.out = 101)
+c.pred <- predict(c.forest, X.test)
+# Estimate the conditional average treatment effect on the full sample (CATE).
+average_treatment_effect(c.forest, target.sample = "all")
+
+# Estimate the conditional average treatment effect on the treated sample (CATT).
+# We don't expect much difference between the CATE and the CATT in this example,
+# since treatment assignment was randomized.
+average_treatment_effect(c.forest, target.sample = "treated")
+
+# Estimate the conditional average treatment effect on samples with positive X[,1].
+average_treatment_effect(c.forest, target.sample = "all", subset = X[, 1] > 0)
+```
+2. Construct a 95% confidence interval around your estimates.
+
+```{r}
+n <- 2000
+p <- 10
+X <- matrix(rnorm(n * p), n, p)
+W <- rbinom(n, 1, 1 / (1 + exp(-X[, 2]))) + rnorm(n)
+Y <- pmax(X[, 1], 0) * W + X[, 2] + pmin(X[, 3], 0) + rnorm(n)
+tau.forest <- causal_forest(X, Y, W)
+tau.hat <- predict(tau.forest)
+average_treatment_effect(tau.forest)
+average_treatment_effect(tau.forest, subset = X[, 1] > 0)
+error<-0.0256
+left <- mean(NewData$hh_id)-error
+right <- mean(NewData$hh_size)+error
+left
+```
+3. What conclusions can you draw from these statistics?
+
+Within each group there are significant levels of ignorablility abd positivity this may be due to the fact that all the treatments have been randomised.
+
+## part C
+
+```{r}
+sample.mean<-mean(dataZ$Q.num_voted)
+sample.n<-length(dataZ$Q.num_voted)
+sample.sd<-sd(dataZ$Q.num_voted)
+sample.se<-sample.sd/sqrt(sample.n)
+print(sample.se)
+
+alpha = 0.05
+degrees.freedom = sample.n - 1
+t.score = qt(p=alpha/2, df=degrees.freedom,lower.tail=F)
+print(t.score)
+
+margin.error <- t.score * sample.se
+
+
+lower.bound <- sample.mean - margin.error
+upper.bound <- sample.mean + margin.error
+print(c(lower.bound,upper.bound))
+`
+```
+2. Combine your observations with conclusions from part b, comment about your findings.
+
+There is a significant difference between the two extrem groups as seen by our confidence interval of our estimator.There is a significant difference between people who vote and people than never vote.
+
+## Part d. Sample sizes and significance e↵ect (Bonus):
+
+. Explain
+in your own words why having more hypothesis/subgroups would make significant e↵ect harder to detect
+for each group, assuming the overall sample size is fixed.
+
+when the population size is increased the hypothesis test becomes more sensitive,hence there is more likely chance of rejecting the null hypothesis.This would make it harder to detect for each group.
+
+## Problem 4
+Part a and b
+
+```{r}
+library(ATE)
+household.level<-dataZ[,c(2,3,4,5)]
+household.level<-household.level[1:200,]
+prop <- 1 / (1 + exp(household.level[,1] - 0.5 * household.level[,2] + 0.25*household.level[,3] + 0.1 * household.level[,4]))
+n<-200
+Z <- matrix(rnorm(4*n),ncol=4,nrow=n)
+prop <- 1 / (1 + exp(Z[,1] - 0.5 * Z[,2] + 0.25*Z[,3] + 0.1 * Z[,4]))
+treat <- rbinom(n, 1, prop)
+Y <- 200 + 10*treat+ (1.5*treat-0.5)*(27.4*Z[,1] + 13.7*Z[,2] +
+                                        13.7*Z[,3] + 13.7*Z[,4]) + rnorm(n)
+X <- cbind(exp(Z[,1])/2,Z[,2]/(1+exp(Z[,1])),
+           (Z[,1]*Z[,3]/25+0.6)^3,(Z[,2]+Z[,4]+20)^2)
+
+#estimation of average treatment effects (ATE)
+fit1<-ATE(Y,treat,X)
+summary(fit1)
+plot(fit1)
+```
+part c
+
+
+```{r}
+set.seed(25)
+n <- 200
+Z <- matrix(rnorm(4*n),ncol=4,nrow=n)
+stratum1 <- 1 / (1 + exp(1+Z[,1] - 0.5 * Z[,2] + 0.25*Z[,3] + 0.1 * Z[,4]))
+stratum2 <- 1 / (1 + exp(Z[,1] - 0.5 * Z[,2] + 0.25*Z[,3] + 0.1 * Z[,4]))
+U <-runif(n)
+treat <- numeric(n)
+treat[U>(1-stratum2)]=2
+treat[U<(1-stratum2)& U>(stratum2-stratum1)]=1
+Y <- 210 + 10*treat +(27.4*Z[,1] + 13.7*Z[,2] +
+                        13.7*Z[,3] + 13.7*Z[,4]) + rnorm(n)
+X <- cbind(exp(Z[,1])/2,Z[,2]/(1+exp(Z[,1])),
+           (Z[,1]*Z[,3]/25+0.6)^3,(Z[,2]+Z[,4]+20)^2)
+fit3<-ATE(Y,treat,X)
+summary(fit3)
+plot(fit3)
+
+Y<-household.level[1:500,1]
+treat<-household.level[1:500,2]
+X<-household.level[1:500,-c(1,2)]
+fit1<- ATE(Y,treat,X)
+fit1
+summary(fit1)
+plot(fit1)
+```
+
+
+
+
